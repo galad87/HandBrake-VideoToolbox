@@ -1321,6 +1321,13 @@ void hb_video_quality_get_limits(uint32_t codec, float *low, float *high,
             *high        = 51.;
             break;
 
+        case HB_VCODEC_VT_H264:
+            *direction   = 0;
+            *granularity = 2.5;
+            *low         = 0.;
+            *high        = 100.;
+             break;
+
         case HB_VCODEC_THEORA:
             *direction   = 0;
             *granularity = 1.;

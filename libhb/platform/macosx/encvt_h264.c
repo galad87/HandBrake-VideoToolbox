@@ -192,7 +192,7 @@ struct
 hb_vt_h264_levels[] =
 {
     // TODO: implement automatic level detection
-    { "auto", { CFSTR("H264_Baseline_4_1"), CFSTR("H264_Main_4_1"), CFSTR("H264_High_4_1"), }, },
+    { "auto", { CFSTR("H264_Baseline_AutoLevel"), CFSTR("H264_Main_AutoLevel"), CFSTR("H264_High_AutoLevel"), }, },
     // support all levels returned by hb_h264_levels()
     { "1.0",  { CFSTR("H264_Baseline_1_3"), CFSTR("H264_Baseline_1_3"), CFSTR("H264_Baseline_1_3"), }, },
     { "1b",   { CFSTR("H264_Baseline_1_3"), CFSTR("H264_Baseline_1_3"), CFSTR("H264_Baseline_1_3"), }, },
@@ -257,13 +257,15 @@ static CFStringRef hb_vt_colr_mat_xlat(int color_matrix)
     }
 }
 
-static void hb_vt_add_color_tag(CVPixelBufferRef pxbuffer)
+static void hb_vt_add_color_tag(CVPixelBufferRef pxbuffer, hb_job_t *job)
 {
-    // TODO: set the right tag.
-    CVBufferSetAttachment(pxbuffer, kCVImageBufferColorPrimariesKey, kCMFormatDescriptionColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
-    CVBufferSetAttachment(pxbuffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
-    CVBufferSetAttachment(pxbuffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+    CFStringRef prim = hb_vt_colr_pri_xlat(job->title->color_prim);
+    CFStringRef trasfer = hb_vt_colr_tra_xlat(job->title->color_transfer);
+    CFStringRef matrix = hb_vt_colr_mat_xlat(job->title->color_matrix);
 
+    CVBufferSetAttachment(pxbuffer, kCVImageBufferColorPrimariesKey, prim, kCVAttachmentMode_ShouldPropagate);
+    CVBufferSetAttachment(pxbuffer, kCVImageBufferTransferFunctionKey, trasfer, kCVAttachmentMode_ShouldPropagate);
+    CVBufferSetAttachment(pxbuffer, kCVImageBufferYCbCrMatrixKey, matrix, kCVAttachmentMode_ShouldPropagate);
 }
 
 void pixelBufferReleasePlanarBytesCallback(
@@ -312,6 +314,18 @@ void myVTCompressionOutputCallback(
         }
     }
 }
+
+//#define VT_STATS
+
+#ifdef VT_STATS
+static void toggle_vt_gva_stats(bool state)
+{
+    CFPropertyListRef cf_state = state ? kCFBooleanTrue : kCFBooleanFalse;
+    CFPreferencesSetValue(CFSTR("gvaEncoderPerf"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+    CFPreferencesSetValue(CFSTR("gvaEncoderPSNR"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+    CFPreferencesSetValue(CFSTR("gvaEncoderSSIM"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+}
+#endif
 
 static OSStatus init_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_private_t * pv, OSType pixelFormatType, int cookieOnly)
 {
@@ -566,7 +580,6 @@ static OSStatus init_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pri
         return err;
     }
 
-
     return err;
 }
 
@@ -645,7 +658,7 @@ static OSStatus create_cookie(hb_work_object_t * w, hb_job_t * job, hb_work_priv
         hb_log("VTCompressionSession: CVPixelBuffer error");
     }
 
-    hb_vt_add_color_tag(pxbuffer);
+    hb_vt_add_color_tag(pxbuffer, job);
 
     CMTime pts = CMTimeMake(0, 90000);
     err = VTCompressionSessionEncodeFrame(
@@ -741,6 +754,10 @@ static OSStatus reuse_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pr
 
 int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
 {
+#ifdef VT_STATS
+    toggle_vt_gva_stats(true);
+#endif
+
     OSStatus err;
     hb_work_private_t * pv = calloc(1, sizeof(hb_work_private_t));
     w->private_data = pv;
@@ -1001,6 +1018,10 @@ void encvt_h264Close( hb_work_object_t * w )
 
     free(pv);
     w->private_data = NULL;
+
+#ifdef VT_STATS
+    toggle_vt_gva_stats(false);
+#endif
 }
 
 /*
@@ -1174,7 +1195,7 @@ static hb_buffer_t *vt_encode(hb_work_object_t *w, hb_buffer_t *in)
     }
     else
     {
-        hb_vt_add_color_tag(pxbuffer);
+        hb_vt_add_color_tag(pxbuffer, w->private_data->job);
 
         CFDictionaryRef frameProperties = NULL;
         if (in->s.new_chap && job->chapter_markers)
