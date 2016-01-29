@@ -235,6 +235,9 @@ hb_work_object_t* hb_video_encoder(hb_handle_t *h, int vcodec)
         case HB_VCODEC_THEORA:
             w = hb_get_work(h, WORK_ENCTHEORA);
             break;
+        case HB_VCODEC_VT_H264:
+            w = hb_get_work(h, WORK_ENCVT_H264);
+            break;
 #ifdef USE_X265
         case HB_VCODEC_X265_8BIT:
         case HB_VCODEC_X265_10BIT:

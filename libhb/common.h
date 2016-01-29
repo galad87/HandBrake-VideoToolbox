@@ -513,7 +513,8 @@ struct hb_job_s
 #define HB_VCODEC_X264         HB_VCODEC_X264_8BIT
 #define HB_VCODEC_X264_10BIT   0x0020000
 #define HB_VCODEC_X264_MASK    0x0030000
-#define HB_VCODEC_H264_MASK    (HB_VCODEC_X264_MASK|HB_VCODEC_QSV_H264)
+#define HB_VCODEC_VT_H264      0x0040000
+#define HB_VCODEC_H264_MASK    (HB_VCODEC_X264_MASK|HB_VCODEC_QSV_H264|HB_VCODEC_VT_H264)
 #define HB_VCODEC_X265_8BIT    0x0001000
 #define HB_VCODEC_X265         HB_VCODEC_X265_8BIT
 #define HB_VCODEC_X265_10BIT   0x0002000
@@ -1193,6 +1194,7 @@ extern hb_work_object_t hb_encvorbis;
 extern hb_work_object_t hb_muxer;
 extern hb_work_object_t hb_encca_aac;
 extern hb_work_object_t hb_encca_haac;
+extern hb_work_object_t hb_encvt_h264;
 extern hb_work_object_t hb_encavcodeca;
 extern hb_work_object_t hb_reader;
 

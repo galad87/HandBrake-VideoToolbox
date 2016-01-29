@@ -338,7 +338,7 @@ ssa_decode_line_to_mkv_ssa( hb_work_object_t * w, hb_buffer_t * in,
     char *mkvIn;
     int numPartsRead;
     char *styleToTextFields;
-    char *layerField = malloc( in_size );
+    char *layerField = malloc( in_size + 128 );
 
     // SSA subtitles have an empty layer field (bare ',').  The scanf
     // format specifier "%*128[^,]" will not match on a bare ','.  There
