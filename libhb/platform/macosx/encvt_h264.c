@@ -107,7 +107,7 @@ struct hb_work_private_s
          * "ThrottleForBackground"
          * "ExpectedDuration"                      // not useful
          * "MaxKeyFrameInterval"                   // implemented
-         * "TransferFunction"                      // needs fixing
+         * "TransferFunction"                      // implemented
          * "InputQueueMaxCount"
          * "AllowFrameReordering"                  // implemented
          * "PixelAspectRatio"                      // needs fixing
@@ -115,16 +115,16 @@ struct hb_work_private_s
          * "ExpectedFrameRate"                     // needs fixing
          * "ExpectedInputBufferDimensions"
          * "ICCProfile"
-         * "UsingHardwareAcceleratedVideoEncoder"  // implemented???
+         * "UsingHardwareAcceleratedVideoEncoder"  // implemented
          * "Depth"
          * "DataRateLimits"                        // needs fixing???
-         * "YCbCrMatrix"                           // needs fixing
+         * "YCbCrMatrix"                           // implemented
          * "PixelBufferPoolIsShared"
          * "VideoEncoderPixelBufferAttributes"
          * "FieldCount"                            // needs fixing
          * "NegotiationDetails"
          * "Priority"                              // implemented
-         * "ColorPrimaries"                        // needs fixing
+         * "ColorPrimaries"                        // implemented
          * "AverageBitRate"                        // implemented
          * "NumberOfPendingFrames"                 // not useful
          * "FieldDetail"                           // needs fixing
@@ -134,6 +134,8 @@ struct hb_work_private_s
          * "CleanAperture"
          * "PixelTransferProperties"
          * "NumberOfSlices"
+         * "MultiPassStorage"                      // implemented
+         * "H264EntropyMode"                       // not impplemented
          */
     }
     settings;
@@ -324,6 +326,9 @@ static void toggle_vt_gva_stats(bool state)
     CFPreferencesSetValue(CFSTR("gvaEncoderPerf"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
     CFPreferencesSetValue(CFSTR("gvaEncoderPSNR"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
     CFPreferencesSetValue(CFSTR("gvaEncoderSSIM"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+
+    //CFPreferencesSetValue(CFSTR("gvaEncoderStats"), cf_state, CFSTR("com.apple.GVAEncoder"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+    //CFPreferencesSetValue(CFSTR("gvaDebug"), cf_state, CFSTR("com.apple.AppleGVA"), kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
 }
 #endif
 
@@ -729,6 +734,10 @@ static OSStatus reuse_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pr
         return err;
     }
 
+    // This should tell us the time range the encoder thinks it can enhance in the second pass
+    // currently we ignore this, because it would mean storing the frames from the first pass
+    // somewhere on disk.
+    // And it seems the range is always the entire movie duration.
     err = VTCompressionSessionGetTimeRangesForNextPass(pv->session, &pv->timeRangeCount, &pv->timeRangeArray);
 
     if (err != noErr)
@@ -754,10 +763,6 @@ static OSStatus reuse_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pr
 
 int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
 {
-#ifdef VT_STATS
-    toggle_vt_gva_stats(true);
-#endif
-
     OSStatus err;
     hb_work_private_t * pv = calloc(1, sizeof(hb_work_private_t));
     w->private_data = pv;
@@ -951,6 +956,10 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
             *job->die = 1;
             return -1;
         }
+
+#ifdef VT_STATS
+        toggle_vt_gva_stats(true);
+#endif
 
         err = init_vtsession(w, job, pv, kCVPixelFormatType_420YpCbCr8Planar, 0);
         if (err != noErr)
