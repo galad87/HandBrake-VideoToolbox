@@ -1076,7 +1076,7 @@ static hb_buffer_t * extract_buf(CMSampleBufferRef sampleBuffer, hb_work_object_
         }
 
         buf->s.frametype = HB_FRAME_IDR;
-        buf->s.flags |= HB_FRAME_REF;
+        buf->s.flags |= HB_FLAG_FRAMETYPE_REF;
 
         CFArrayRef attachmentsArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, 0);
         if (CFArrayGetCount(attachmentsArray))
@@ -1099,7 +1099,7 @@ static hb_buffer_t * extract_buf(CMSampleBufferRef sampleBuffer, hb_work_object_
                     else
                     {
                         buf->s.frametype = HB_FRAME_B;
-                        buf->s.flags &= ~HB_FRAME_REF;
+                        buf->s.flags &= ~HB_FLAG_FRAMETYPE_REF;
                     }
                 }
                 else
