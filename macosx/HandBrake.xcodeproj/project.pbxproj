@@ -221,6 +221,11 @@
 		A9C0DB85197E7B0000DF55B3 /* SubtitlesDefaults.xib in Resources */ = {isa = PBXBuildFile; fileRef = A9C0DB83197E7B0000DF55B3 /* SubtitlesDefaults.xib */; };
 		A9C1839D1A716BCC00C897C2 /* HBTitleSelection.xib in Resources */ = {isa = PBXBuildFile; fileRef = A9C1839B1A716BCC00C897C2 /* HBTitleSelection.xib */; };
 		A9CE0A921F57EC3400724577 /* HBImageUtilities.m in Sources */ = {isa = PBXBuildFile; fileRef = A9CE0A911F57EC3400724577 /* HBImageUtilities.m */; };
+		A9CE3EB81FA7203600E7669E /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9CE3EB71FA7203600E7669E /* VideoToolbox.framework */; };
+		A9CE3EBA1FA7203B00E7669E /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9CE3EB91FA7203B00E7669E /* CoreMedia.framework */; };
+		A9CE3EBC1FA7204500E7669E /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9CE3EBB1FA7204500E7669E /* CoreVideo.framework */; };
+		A9CE3EBD1FA7205100E7669E /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9CE3EB71FA7203600E7669E /* VideoToolbox.framework */; };
+		A9CE3EBE1FA7205600E7669E /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A9CE3EB91FA7203B00E7669E /* CoreMedia.framework */; };
 		A9CF25F11990D62C0023F727 /* Presets.xib in Resources */ = {isa = PBXBuildFile; fileRef = A9CF25EF1990D62C0023F727 /* Presets.xib */; };
 		A9CF25F71990D6820023F727 /* HBPresetsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A9CF25F61990D6820023F727 /* HBPresetsViewController.m */; };
 		A9D0FA771C1C284D0003F2A9 /* HBFocusRingView.m in Sources */ = {isa = PBXBuildFile; fileRef = A9D0FA761C1C284D0003F2A9 /* HBFocusRingView.m */; };
@@ -537,6 +542,9 @@
 		A9CAC26E1CCB6B0F00A39E72 /* HBPlayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HBPlayer.h; sourceTree = "<group>"; };
 		A9CE0A911F57EC3400724577 /* HBImageUtilities.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HBImageUtilities.m; sourceTree = "<group>"; };
 		A9CE0A931F57EC4600724577 /* HBImageUtilities.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HBImageUtilities.h; sourceTree = "<group>"; };
+		A9CE3EB71FA7203600E7669E /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
+		A9CE3EB91FA7203B00E7669E /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		A9CE3EBB1FA7204500E7669E /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
 		A9CF25F01990D62C0023F727 /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = Presets.xib; sourceTree = "<group>"; };
 		A9CF25F21990D64E0023F727 /* HBPreset.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HBPreset.h; sourceTree = "<group>"; };
 		A9CF25F31990D64E0023F727 /* HBPreset.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = HBPreset.m; sourceTree = "<group>"; };
@@ -593,6 +601,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A9CE3EBC1FA7204500E7669E /* CoreVideo.framework in Frameworks */,
+				A9CE3EBA1FA7203B00E7669E /* CoreMedia.framework in Frameworks */,
+				A9CE3EB81FA7203600E7669E /* VideoToolbox.framework in Frameworks */,
 				A9ABD1A91E2A0F8200EC8B65 /* CoreGraphics.framework in Frameworks */,
 				A9ABD1A71E2A0F7500EC8B65 /* CoreText.framework in Frameworks */,
 				A9E165521C523016003EF30E /* libavfilter.a in Frameworks */,
@@ -647,6 +658,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A9CE3EBE1FA7205600E7669E /* CoreMedia.framework in Frameworks */,
+				A9CE3EBD1FA7205100E7669E /* VideoToolbox.framework in Frameworks */,
 				A9ABD1AA1E2A0F8F00EC8B65 /* CoreGraphics.framework in Frameworks */,
 				A9ABD1A61E2A0F0700EC8B65 /* CoreText.framework in Frameworks */,
 				A91119A31C7DD591001C463C /* IOKit.framework in Frameworks */,
@@ -779,6 +792,9 @@
 		273F203414ADBAC30021BE6D /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A9CE3EBB1FA7204500E7669E /* CoreVideo.framework */,
+				A9CE3EB91FA7203B00E7669E /* CoreMedia.framework */,
+				A9CE3EB71FA7203600E7669E /* VideoToolbox.framework */,
 				A9ABD1A81E2A0F8200EC8B65 /* CoreGraphics.framework */,
 				A9ABD1A51E2A0F0700EC8B65 /* CoreText.framework */,
 				A91CE2D31C7DABE40068F46F /* libiconv.tbd */,

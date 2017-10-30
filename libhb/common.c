@@ -23,6 +23,10 @@
 #include "qsv_common.h"
 #endif
 
+#ifdef __APPLE__
+#include "platform/macosx/encvt.h"
+#endif
+
 #ifdef USE_X265
 #include "x265.h"
 #endif
@@ -243,6 +247,7 @@ hb_encoder_internal_t hb_video_encoders[]  =
     { { "H.265 16-bit (x265)", "x265_16bit", "H.265 16-bit (libx265)",  HB_VCODEC_X265_16BIT,     HB_MUX_AV_MP4|HB_MUX_AV_MKV,   }, NULL, 1, HB_GID_VCODEC_H265,   },
     { { "H.265 (Intel QSV)",   "qsv_h265",   "H.265 (Intel Media SDK)", HB_VCODEC_QSV_H265,     HB_MUX_MASK_MP4|HB_MUX_MASK_MKV, }, NULL, 1, HB_GID_VCODEC_H265,   },
     { { "H.265 10-bit (Intel QSV)",   "qsv_h265_10bit",   "H.265 10-bit (Intel Media SDK)", HB_VCODEC_QSV_H265_10BIT,     HB_MUX_MASK_MP4|HB_MUX_MASK_MKV, }, NULL, 1, HB_GID_VCODEC_H265,   },
+    { { "H.265 (VideoToolbox)","vt_h265",    "H.265 (VideoToolbox)",    HB_VCODEC_VT_H265,      HB_MUX_MASK_MP4|HB_MUX_MASK_MKV, }, NULL, 1, HB_GID_VCODEC_H265,   },
     { { "MPEG-4",              "mpeg4",      "MPEG-4 (libavcodec)",     HB_VCODEC_FFMPEG_MPEG4, HB_MUX_MASK_MP4|HB_MUX_MASK_MKV, }, NULL, 1, HB_GID_VCODEC_MPEG4,  },
     { { "MPEG-2",              "mpeg2",      "MPEG-2 (libavcodec)",     HB_VCODEC_FFMPEG_MPEG2, HB_MUX_MASK_MP4|HB_MUX_MASK_MKV, }, NULL, 1, HB_GID_VCODEC_MPEG2,  },
     { { "VP8",                 "VP8",        "VP8 (libvpx)",            HB_VCODEC_FFMPEG_VP8,                   HB_MUX_MASK_MKV, }, NULL, 1, HB_GID_VCODEC_VP8,    },
@@ -270,7 +275,10 @@ static int hb_video_encoder_is_enabled(int encoder)
 
 #ifdef __APPLE__
         case HB_VCODEC_VT_H264:
-            return 1;
+            return encvt_h264_is_available();
+
+        case HB_VCODEC_VT_H265:
+            return encvt_h265_is_available();
 #endif
 
 #ifdef USE_X265
@@ -1322,6 +1330,7 @@ void hb_video_quality_get_limits(uint32_t codec, float *low, float *high,
             break;
 
         case HB_VCODEC_VT_H264:
+        case HB_VCODEC_VT_H265:
             *direction   = 0;
             *granularity = 2.5;
             *low         = 0.;
@@ -1427,6 +1436,7 @@ const char* const* hb_video_encoder_get_presets(int encoder)
         case HB_VCODEC_X265_10BIT:
         case HB_VCODEC_X265_12BIT:
         case HB_VCODEC_X265_16BIT:
+        case HB_VCODEC_VT_H265:
             return x265_preset_names;
 #endif
         default:
@@ -1472,6 +1482,7 @@ const char* const* hb_video_encoder_get_profiles(int encoder)
             return hb_h264_profile_names_10bit;
 
         case HB_VCODEC_X265_8BIT:
+        case HB_VCODEC_VT_H265:
             return hb_h265_profile_names_8bit;
         case HB_VCODEC_X265_10BIT:
             return hb_h265_profile_names_10bit;

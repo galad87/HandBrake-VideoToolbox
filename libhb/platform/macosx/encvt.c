@@ -1,4 +1,4 @@
-/* encvt_h264.c
+/* encvt_.c
 
    Copyright (c) 2003-2016 HandBrake Team
    This file is part of the HandBrake source code
@@ -8,40 +8,28 @@
  */
 
 #include "hb.h"
+#include "encvt.h"
+
 #include <VideoToolbox/VideoToolbox.h>
 #include <CoreMedia/CoreMedia.h>
 #include <CoreVideo/CoreVideo.h>
 
-int  encvt_h264Init( hb_work_object_t *, hb_job_t * );
-int  encvt_h264Work( hb_work_object_t *, hb_buffer_t **, hb_buffer_t ** );
-void encvt_h264Close( hb_work_object_t * );
+#ifndef kCMVideoCodecType_HEVC
+    #define kCMVideoCodecType_HEVC 'hvc1'
+#endif
 
-hb_work_object_t hb_encvt_h264 =
+int  encvt_init( hb_work_object_t *, hb_job_t * );
+int  encvt_work( hb_work_object_t *, hb_buffer_t **, hb_buffer_t ** );
+void encvt_close( hb_work_object_t * );
+
+hb_work_object_t hb_encvt =
 {
-    WORK_ENCVT_H264,
-    "H.264 encoder (VideoToolbox)",
-    encvt_h264Init,
-    encvt_h264Work,
-    encvt_h264Close
+    WORK_ENCVT,
+    "VideoToolbox encoder (Apple)",
+    encvt_init,
+    encvt_work,
+    encvt_close
 };
-
-/*
- * The frame info struct remembers information about each frame across calls
- * to x264_encoder_encode. Since frames are uniquely identified by their
- * timestamp, we use some bits of the timestamp as an index. The LSB is
- * chosen so that two successive frames will have different values in the
- * bits over any plausible range of frame rates. (Starting with bit 8 allows
- * any frame rate slower than 352fps.) The MSB determines the size of the array.
- * It is chosen so that two frames can't use the same slot during the
- * encoder's max frame delay (set by the standard as 16 frames) and so
- * that, up to some minimum frame rate, frames are guaranteed to map to
- * different slots. (An MSB of 17 which is 2^(17-8+1) = 1024 slots guarantees
- * no collisions down to a rate of .7 fps).
- */
-#define FRAME_INFO_MAX2 (8)     // 2^8 = 256; 90000/256 = 352 frames/sec
-#define FRAME_INFO_MIN2 (17)    // 2^17 = 128K; 90000/131072 = 1.4 frames/sec
-#define FRAME_INFO_SIZE (1 << (FRAME_INFO_MIN2 - FRAME_INFO_MAX2 + 1))
-#define FRAME_INFO_MASK (FRAME_INFO_SIZE - 1)
 
 struct hb_work_private_s
 {
@@ -58,7 +46,7 @@ struct hb_work_private_s
     const CMTimeRange   * timeRangeArray;
     int                   remainingPasses;
 
-    struct hb_vt_h264_param
+    struct hb_vt_param
     {
         int averageBitRate;
         double expectedFrameRate;
@@ -110,7 +98,7 @@ struct hb_work_private_s
          * "TransferFunction"                      // implemented
          * "InputQueueMaxCount"
          * "AllowFrameReordering"                  // implemented
-         * "PixelAspectRatio"                      // needs fixing
+         * "PixelAspectRatio"                      // implemented
          * "SourceFrameCount"                      // not useful
          * "ExpectedFrameRate"                     // needs fixing
          * "ExpectedInputBufferDimensions"
@@ -141,17 +129,15 @@ struct hb_work_private_s
     settings;
 
     // Sync
-    int init_delay;
-
-    struct {
-        int64_t        duration;
-    } frame_info[FRAME_INFO_SIZE];
+    int frame_ct_in;
+    int first_pts;
+    int dts_delta;
 
     hb_list_t        * delayed_chapters;
     int64_t            next_chapter_pts;
 };
 
-void hb_vt_param_default(struct hb_vt_h264_param *param)
+void hb_vt_param_default(struct hb_vt_param *param)
 {
     param->vbv.maxrate              = 0;
     param->vbv.bufsize              = 0;
@@ -216,10 +202,29 @@ hb_vt_h264_levels[] =
     { NULL,   { NULL,                       NULL,                       NULL,                       }, },
 };
 
+enum
+{
+    HB_VT_H265_PROFILE_MAIN = 0,
+    HB_VT_H265_PROFILE_MAIN_10,
+    HB_VT_H265_PROFILE_NB,
+};
+
+struct
+{
+    const char *name;
+    const CFStringRef level[HB_VT_H265_PROFILE_NB];
+}
+hb_vt_h265_levels[] =
+{
+    { "auto", { CFSTR("HEVC_Main_AutoLevel"), CFSTR("HEVC_Main10_AutoLevel") }, }
+};
+
 static CFStringRef hb_vt_colr_pri_xlat(int color_prim)
 {
     switch (color_prim)
     {
+        case HB_COLR_PRI_BT2020:
+            return kCMFormatDescriptionColorPrimaries_ITU_R_2020;
         case HB_COLR_PRI_BT709:
             return kCMFormatDescriptionColorPrimaries_ITU_R_709_2;
         case HB_COLR_PRI_EBUTECH:
@@ -239,6 +244,8 @@ static CFStringRef hb_vt_colr_tra_xlat(int color_transfer)
             return kCMFormatDescriptionTransferFunction_ITU_R_709_2;
         case HB_COLR_TRA_SMPTE240M:
             return kCMFormatDescriptionTransferFunction_SMPTE_240M_1995;
+        case HB_COLR_TRA_SMPTEST2084:
+            CFSTR("SMPTE_ST_2084_PQ");
         default:
             return NULL;
     }
@@ -248,6 +255,8 @@ static CFStringRef hb_vt_colr_mat_xlat(int color_matrix)
 {
     switch (color_matrix)
     {
+        case HB_COLR_MAT_BT2020_NCL:
+            return kCMFormatDescriptionYCbCrMatrix_ITU_R_2020;
         case HB_COLR_MAT_BT709:
             return kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2;
         case HB_COLR_MAT_SMPTE170M:
@@ -332,6 +341,39 @@ static void toggle_vt_gva_stats(bool state)
 }
 #endif
 
+static const CFStringRef encoder_id_h264 = CFSTR("com.apple.videotoolbox.videoencoder.h264.gva");
+static const CFStringRef encoder_id_h265 = CFSTR("com.apple.videotoolbox.videoencoder.hevc.gva");
+
+int encvt_available(CFStringRef encoder)
+{
+    CFArrayRef encoder_list;
+    VTCopyVideoEncoderList(NULL, &encoder_list);
+    CFIndex size = CFArrayGetCount(encoder_list);
+
+    for (CFIndex i = 0; i < size; i++ )
+    {
+        CFDictionaryRef encoder_dict = CFArrayGetValueAtIndex(encoder_list, i);
+        CFStringRef encoder_id = CFDictionaryGetValue(encoder_dict, kVTVideoEncoderSpecification_EncoderID);
+        if (CFEqual(encoder_id, encoder))
+        {
+            CFRelease(encoder_list);
+            return 1;
+        }
+    }
+    CFRelease(encoder_list);
+    return 0;
+}
+
+int encvt_h264_is_available()
+{
+    return encvt_available(encoder_id_h264);
+}
+
+int encvt_h265_is_available()
+{
+    return encvt_available(encoder_id_h265);
+}
+
 static OSStatus init_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_private_t * pv, OSType pixelFormatType, int cookieOnly)
 {
     OSStatus err = noErr;
@@ -348,7 +390,7 @@ static OSStatus init_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pri
                                                                              &kCFTypeDictionaryKeyCallBacks,
                                                                              &kCFTypeDictionaryValueCallBacks);
 
-    // Comment out to disable QuickSync
+    // Comment out to disable HW Acceleration
     CFDictionaryAddValue(encoderSpecifications, bkey, bvalue);
     CFDictionaryAddValue(encoderSpecifications, ckey, cvalue);
 
@@ -356,7 +398,7 @@ static OSStatus init_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pri
                                kCFAllocatorDefault,
                                job->width,
                                job->height,
-                               kCMVideoCodecType_H264,
+                               job->vcodec == HB_VCODEC_VT_H264 ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC,
                                encoderSpecifications,
                                NULL,
                                NULL,
@@ -588,7 +630,7 @@ static OSStatus init_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pri
     return err;
 }
 
-static void set_cookie(hb_work_object_t * w, CMFormatDescriptionRef format)
+static void set_h264_cookie(hb_work_object_t * w, CMFormatDescriptionRef format)
 {
     CFDictionaryRef extentions = CMFormatDescriptionGetExtensions(format);
     if (!extentions)
@@ -629,6 +671,29 @@ static void set_cookie(hb_work_object_t * w, CMFormatDescriptionRef format)
         }
         w->config->h264.pps_length = ppsPos;
 
+    }
+}
+
+static void set_h265_cookie(hb_work_object_t * w, CMFormatDescriptionRef format)
+{
+    CFDictionaryRef extentions = CMFormatDescriptionGetExtensions(format);
+    if (!extentions)
+    {
+        hb_log("VTCompressionSession: Format Description Extensions error");
+    }
+    else
+    {
+        CFDictionaryRef atoms = CFDictionaryGetValue(extentions, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms);
+        CFDataRef magicCookie = CFDictionaryGetValue(atoms, CFSTR("hvcC"));
+        if (!magicCookie)
+        {
+            hb_log("VTCompressionSession: HEVC Magic Cookie error");
+        }
+
+        const uint8_t *hvcCAtom = CFDataGetBytePtr(magicCookie);
+        uint16_t size = CFDataGetLength(magicCookie);
+        memcpy(w->config->h265.headers, hvcCAtom, size);
+        w->config->h265.headers_length = size;
     }
 }
 
@@ -701,7 +766,13 @@ static OSStatus create_cookie(hb_work_object_t * w, hb_job_t * job, hb_work_priv
             pv->format = format;
             CFRetain(pv->format);
 
-            set_cookie(w, format);
+            if (job->vcodec == HB_VCODEC_VT_H264)
+            {
+                set_h264_cookie(w, format);
+            }
+            else {
+                set_h265_cookie(w, format);
+            }
         }
 
         CFRelease(sampleBuffer);
@@ -720,8 +791,14 @@ static OSStatus reuse_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pr
     hb_interjob_t * interjob = hb_interjob_get(job->h);
     vt_interjob_t * context = interjob->vt_context;
 
-    set_cookie(w, context->format);
-
+    if (job->vcodec == HB_VCODEC_VT_H264)
+    {
+        set_h264_cookie(w, context->format);
+    }
+    else
+    {
+        set_h265_cookie(w, context->format);
+    }
     CFRelease(pv->queue);
 
     pv->queue = context->queue;
@@ -761,7 +838,7 @@ static OSStatus reuse_vtsession(hb_work_object_t * w, hb_job_t * job, hb_work_pr
 }
 
 
-int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
+int encvt_init(hb_work_object_t * w, hb_job_t * job)
 {
     OSStatus err;
     hb_work_private_t * pv = calloc(1, sizeof(hb_work_private_t));
@@ -774,32 +851,56 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
     // set the profile and level before initializing the session
     if (job->encoder_profile != NULL && *job->encoder_profile != '\0')
     {
-        if (!strcasecmp(job->encoder_profile, "baseline"))
+        if (job->vcodec == HB_VCODEC_VT_H264)
         {
-            pv->settings.h264_profile = HB_VT_H264_PROFILE_BASELINE;
+            if (!strcasecmp(job->encoder_profile, "baseline"))
+            {
+                pv->settings.h264_profile = HB_VT_H264_PROFILE_BASELINE;
+            }
+            else if (!strcasecmp(job->encoder_profile, "main") ||
+                    !strcasecmp(job->encoder_profile, "auto"))
+            {
+                pv->settings.h264_profile = HB_VT_H264_PROFILE_MAIN;
+            }
+            else if (!strcasecmp(job->encoder_profile, "high"))
+            {
+                pv->settings.h264_profile = HB_VT_H264_PROFILE_HIGH;
+            }
+            else
+            {
+                hb_error("encvt_Init: invalid profile '%s'", job->encoder_profile);
+                *job->die = 1;
+                return -1;
+            }
         }
-        else if (!strcasecmp(job->encoder_profile, "main") ||
-                 !strcasecmp(job->encoder_profile, "auto"))
+        else if (job->vcodec == HB_VCODEC_VT_H265)
         {
-            pv->settings.h264_profile = HB_VT_H264_PROFILE_MAIN;
-        }
-        else if (!strcasecmp(job->encoder_profile, "high"))
-        {
-            pv->settings.h264_profile = HB_VT_H264_PROFILE_HIGH;
-        }
-        else
-        {
-            hb_error("encvt_h264Init: invalid profile '%s'", job->encoder_profile);
-            *job->die = 1;
-            return -1;
+            if (!strcasecmp(job->encoder_profile, "main") ||
+                !strcasecmp(job->encoder_profile, "auto"))
+            {
+                pv->settings.h264_profile = HB_VT_H265_PROFILE_MAIN;
+            }
+            else
+            {
+                hb_error("encvt_Init: invalid profile '%s'", job->encoder_profile);
+                *job->die = 1;
+                return -1;
+            }
         }
     }
     else
     {
-        pv->settings.h264_profile = HB_VT_H264_PROFILE_HIGH;
+        if (job->vcodec == HB_VCODEC_VT_H264)
+        {
+            pv->settings.h264_profile = HB_VT_H264_PROFILE_HIGH;
+        }
+        else if (job->vcodec == HB_VCODEC_VT_H265)
+        {
+            pv->settings.h264_profile = HB_VT_H265_PROFILE_MAIN;
+        }
     }
 
-    if (job->encoder_level != NULL && *job->encoder_level != '\0')
+    if (job->encoder_level != NULL && *job->encoder_level != '\0' && job->vcodec == HB_VCODEC_VT_H264)
     {
         int i;
         for (i = 0; hb_vt_h264_levels[i].name != NULL; i++)
@@ -812,21 +913,28 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
         }
         if (hb_vt_h264_levels[i].name == NULL)
         {
-            hb_error("encvt_h264Init: invalid level '%s'", job->encoder_level);
+            hb_error("encvt_Init: invalid level '%s'", job->encoder_level);
             *job->die = 1;
             return -1;
         }
     }
     else
     {
-        pv->settings.profileLevel = hb_vt_h264_levels[0].level[pv->settings.h264_profile];
+        if (job->vcodec == HB_VCODEC_VT_H264)
+        {
+            pv->settings.profileLevel = hb_vt_h264_levels[0].level[pv->settings.h264_profile];
+        }
+        else if (job->vcodec == HB_VCODEC_VT_H265)
+        {
+            pv->settings.profileLevel = hb_vt_h265_levels[0].level[pv->settings.h264_profile];
+        }
     }
 
     pv->settings.maxKeyFrameInterval  = pv->settings.expectedFrameRate * 5;
 
     /* Compute the frame rate and output bit rate. */
     pv->settings.expectedFrameRate = (double)job->vrate.num / (double)job->vrate.den;
-    pv->init_delay = 90000 / pv->settings.expectedFrameRate * 2;
+//    pv->init_delay = 90000 / pv->settings.expectedFrameRate * 2;
 
     if (job->vquality >= 0.0)
     {
@@ -852,10 +960,10 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
     }
     else
     {
-        hb_error("encvt_h264Init: invalid rate control (bitrate %d, quality %f)",
+        hb_error("encvt_Init: invalid rate control (bitrate %d, quality %f)",
                  job->vbitrate, job->vquality);
     }
-    hb_log("encvt_h264Init: encoding with output bitrate %d Kbps",
+    hb_log("encvt_Init: encoding with output bitrate %d Kbps",
            pv->settings.averageBitRate / 1000);
 
 
@@ -865,10 +973,17 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
     /* Initialize input-specific default settings. */
     switch (job->color_matrix_code)
     {
-        case 4: // custom
+        case 5: // custom
             pv->settings.color.prim     = job->color_prim;
             pv->settings.color.transfer = job->color_transfer;
             pv->settings.color.matrix   = job->color_matrix;
+            break;
+
+        case 4:
+            // ITU BT.2020 UHD content
+            pv->settings.color.prim     = HB_COLR_PRI_BT2020;
+            pv->settings.color.transfer = HB_COLR_TRA_BT709;
+            pv->settings.color.matrix   = HB_COLR_MAT_BT2020_NCL;
             break;
 
         case 3: // ITU BT.709 HD content
@@ -907,7 +1022,7 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
      * Reload colorimetry settings in case custom values were set in the
      * advanced options string
      */
-    job->color_matrix_code = 4;
+    job->color_matrix_code = 5;
     job->color_prim        = pv->settings.color.prim;
     job->color_transfer    = pv->settings.color.transfer;
     job->color_matrix      = pv->settings.color.matrix;
@@ -983,7 +1098,7 @@ int encvt_h264Init(hb_work_object_t * w, hb_job_t * job)
     return 0;
 }
 
-void encvt_h264Close( hb_work_object_t * w )
+void encvt_close( hb_work_object_t * w )
 {
     hb_work_private_t * pv = w->private_data;
 
@@ -1033,22 +1148,6 @@ void encvt_h264Close( hb_work_object_t * w )
 #endif
 }
 
-/*
- * see comments in definition of 'frame_info' in pv struct for description
- * of what these routines are doing.
- */
-static void save_frame_info( hb_work_private_t * pv, hb_buffer_t * in )
-{
-    int i = (in->s.start >> FRAME_INFO_MAX2) & FRAME_INFO_MASK;
-    pv->frame_info[i].duration = in->s.stop - in->s.start;
-}
-
-static int64_t get_frame_duration( hb_work_private_t * pv, int64_t pts )
-{
-    int i = (pts >> FRAME_INFO_MAX2) & FRAME_INFO_MASK;
-    return pv->frame_info[i].duration;
-}
-
 static hb_buffer_t * extract_buf(CMSampleBufferRef sampleBuffer, hb_work_object_t * w)
 {
     OSStatus err;
@@ -1082,53 +1181,49 @@ static hb_buffer_t * extract_buf(CMSampleBufferRef sampleBuffer, hb_work_object_
         if (CFArrayGetCount(attachmentsArray))
         {
             CFDictionaryRef dict = CFArrayGetValueAtIndex(attachmentsArray, 0);
-            if (CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_NotSync, NULL))
+            CFBooleanRef notSync;
+            if (CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_NotSync,(const void **) &notSync))
             {
-                CFBooleanRef b;
-                if (CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_PartialSync, NULL))
-                {
-                    buf->s.frametype = HB_FRAME_I;
-                }
-                else if (CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_IsDependedOnByOthers,(const void **) &b))
-                {
-                    Boolean bv = CFBooleanGetValue(b);
-                    if (bv)
+                Boolean notSyncValue = CFBooleanGetValue(notSync);
+                if (notSyncValue) {
+                    CFBooleanRef b;
+                    if (CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_PartialSync, NULL))
                     {
-                        buf->s.frametype = HB_FRAME_P;
+                        buf->s.frametype = HB_FRAME_I;
+                    }
+                    else if (CFDictionaryGetValueIfPresent(dict, kCMSampleAttachmentKey_IsDependedOnByOthers,(const void **) &b))
+                    {
+                        Boolean bv = CFBooleanGetValue(b);
+                        if (bv)
+                        {
+                            buf->s.frametype = HB_FRAME_P;
+                        }
+                        else
+                        {
+                            buf->s.frametype = HB_FRAME_B;
+                            buf->s.flags &= ~HB_FLAG_FRAMETYPE_REF;
+                        }
                     }
                     else
                     {
-                        buf->s.frametype = HB_FRAME_B;
-                        buf->s.flags &= ~HB_FLAG_FRAMETYPE_REF;
+                       buf->s.frametype = HB_FRAME_P;
                     }
-                }
-                else
-                {
-                    buf->s.frametype = HB_FRAME_P;
                 }
             }
         }
 
         CMTime decodeTimeStamp = CMSampleBufferGetDecodeTimeStamp(sampleBuffer);
         CMTime presentationTimeStamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-        int64_t duration = get_frame_duration(pv, presentationTimeStamp.value);
+        CMTime duration = CMSampleBufferGetDuration(sampleBuffer);
 
-        // FIXME: ??
-        if (!w->config->h264.init_delay)
-        {
-            if (pv->init_delay < buf->s.duration)
-            {
-                pv->init_delay = buf->s.duration;
-            }
-            w->config->h264.init_delay = pv->init_delay;
-        }
+        int64_t dts_delta = pv->dts_delta >= 0 ? pv->dts_delta : 0;
 
         buf->f.width = job->width;
         buf->f.height = job->height;
-        buf->s.duration = duration;
+        buf->s.duration = duration.value;
         buf->s.start = presentationTimeStamp.value;
         buf->s.stop  = presentationTimeStamp.value + buf->s.duration;
-        buf->s.renderOffset = decodeTimeStamp.value - pv->init_delay;
+        buf->s.renderOffset = decodeTimeStamp.value - dts_delta;
 
         if (buf->s.frametype == HB_FRAME_IDR)
         {
@@ -1243,10 +1338,6 @@ static hb_buffer_t *vt_encode(hb_work_object_t *w, hb_buffer_t *in)
 
         }
 
-        // Remember info about this frame that we need to pass across
-        // the vt_encode call (since it reorders frames).
-        save_frame_info(pv, in);
-
         // Send the frame to be encoded
         err = VTCompressionSessionEncodeFrame(
                                               pv->session,
@@ -1266,6 +1357,16 @@ static hb_buffer_t *vt_encode(hb_work_object_t *w, hb_buffer_t *in)
         {
             CFRelease(frameProperties);
         }
+
+        if (pv->frame_ct_in == 0)
+        {
+            pv->first_pts = in->s.start;
+        }
+        else if (pv->frame_ct_in == 1 && pv->settings.allowFrameReordering)
+        {
+            pv->dts_delta = in->s.start - pv->first_pts;
+        }
+        pv->frame_ct_in++;
     }
     
     // Return a frame if ready
@@ -1281,7 +1382,7 @@ static hb_buffer_t *vt_encode(hb_work_object_t *w, hb_buffer_t *in)
     return buf_out;
 }
 
-int encvt_h264Work(hb_work_object_t * w, hb_buffer_t ** buf_in,
+int encvt_work(hb_work_object_t * w, hb_buffer_t ** buf_in,
                  hb_buffer_t ** buf_out)
 {
     hb_work_private_t * pv = w->private_data;
