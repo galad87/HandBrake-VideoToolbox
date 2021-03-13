@@ -2193,7 +2193,7 @@ const char* const* hb_qsv_level_get_names(int encoder)
     }
 }
 
-const int* hb_av_get_pix_fmts(int encoder)
+const int* hb_qsv_get_pix_fmts(int encoder)
 {
     switch (encoder)
     {
