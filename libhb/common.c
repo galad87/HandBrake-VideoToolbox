@@ -1676,6 +1676,50 @@ const char* const* hb_video_encoder_get_levels(int encoder)
     }
 }
 
+static const enum AVPixelFormat standard_pix_fmts[] =
+{
+    AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
+};
+
+static const enum AVPixelFormat standard_10bit_pix_fmts[] =
+{
+    AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
+};
+
+static const enum AVPixelFormat standard_12bit_pix_fmts[] =
+{
+    AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
+};
+
+const int* hb_video_encoder_get_pix_fmts(int encoder)
+{
+#if HB_PROJECT_FEATURE_QSV
+    if (encoder & HB_VCODEC_QSV_MASK)
+    {
+        return hb_qsv_get_pix_fmts(encoder);
+    }
+#endif
+
+    if (encoder & HB_VCODEC_FFMPEG_MASK)
+    {
+        return hb_av_get_pix_fmts(encoder);
+    }
+
+    switch (encoder)
+    {
+        case HB_VCODEC_X264_10BIT:
+            return standard_10bit_pix_fmts;
+#if HB_PROJECT_FEATURE_X265
+        case HB_VCODEC_X265_10BIT:
+            return standard_10bit_pix_fmts;
+        case HB_VCODEC_X265_12BIT:
+            return standard_12bit_pix_fmts;
+#endif
+        default:
+            return standard_pix_fmts;
+    }
+}
+
 // Get limits and hints for the UIs.
 //
 // granularity sets the minimum step increments that should be used

@@ -444,13 +444,13 @@ void hb_display_job_info(hb_job_t *job)
 #if HB_PROJECT_FEATURE_QSV
     if (hb_qsv_decode_is_enabled(job))
     {
-        hb_log("   + decoder: %s %d-bit",
-               hb_qsv_decode_get_codec_name(title->video_codec_param), hb_get_bit_depth(job->pix_fmt));
+        hb_log("   + decoder: %s %d-bit (%s)",
+               hb_qsv_decode_get_codec_name(title->video_codec_param), hb_get_bit_depth(job->pix_fmt), av_get_pix_fmt_name(job->pix_fmt));
     }
     else
 #endif
     {
-        hb_log("   + decoder: %s %d-bit", title->video_codec_name, hb_get_bit_depth(job->pix_fmt));
+        hb_log("   + decoder: %s %d-bit (%s)", title->video_codec_name, hb_get_bit_depth(job->pix_fmt), av_get_pix_fmt_name(job->pix_fmt));
     }
 
     if( title->video_bitrate )
@@ -816,6 +816,63 @@ void correct_framerate( hb_interjob_t * interjob, hb_job_t * job )
                job->orig_vrate.num, job->orig_vrate.den,
                job->vrate.num, job->vrate.den);
     }
+}
+
+static int pix_fmt_is_supported(hb_job_t * job, int pix_fmt)
+{
+    int title_bit_depth = hb_get_bit_depth(job->title->pix_fmt);
+    int pix_fmt_bit_depth = hb_get_bit_depth(pix_fmt);
+
+    if (pix_fmt_bit_depth > title_bit_depth)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < hb_list_count(job->list_filter); i++)
+    {
+        hb_filter_object_t *filter = hb_list_item(job->list_filter, i);
+
+        switch (filter->id)
+        {
+            case HB_FILTER_DETELECINE:
+            case HB_FILTER_COMB_DETECT:
+            case HB_FILTER_DECOMB:
+            case HB_FILTER_DENOISE:
+            case HB_FILTER_NLMEANS:
+            case HB_FILTER_CHROMA_SMOOTH:
+            case HB_FILTER_LAPSHARP:
+            case HB_FILTER_UNSHARP:
+            case HB_FILTER_GRAYSCALE:
+                if (pix_fmt != AV_PIX_FMT_YUV420P)
+                {
+                    return 0;
+                }
+            case HB_FILTER_RENDER_SUB:
+                if (pix_fmt != AV_PIX_FMT_YUV420P   ||
+                    pix_fmt != AV_PIX_FMT_YUV420P10 ||
+                    pix_fmt != AV_PIX_FMT_YUV420P12)
+                {
+                    return 0;
+                }
+        }
+    }
+
+    return 1;
+}
+
+static int get_best_pix_fmt(hb_job_t * job)
+{
+    const int *pix_fmts = hb_video_encoder_get_pix_fmts(job->vcodec);
+    while (*pix_fmts != AV_PIX_FMT_NONE)
+    {
+        if (pix_fmt_is_supported(job, *pix_fmts))
+        {
+            return *pix_fmts;
+        }
+        pix_fmts++;
+    }
+
+    return AV_PIX_FMT_YUV420P;
 }
 
 static void analyze_subtitle_scan( hb_job_t * job )
@@ -1434,7 +1491,7 @@ static void do_job(hb_job_t *job)
         init.time_base.num = 1;
         init.time_base.den = 90000;
         init.job = job;
-        init.pix_fmt = hb_get_best_pix_fmt(job);
+        init.pix_fmt = get_best_pix_fmt(job);
         init.color_range = AVCOL_RANGE_MPEG;
 
         init.color_prim = title->color_prim;

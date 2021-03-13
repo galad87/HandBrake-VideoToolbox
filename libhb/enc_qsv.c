@@ -850,7 +850,7 @@ int qsv_enc_init(hb_work_private_t *pv)
         {
             pv->sws_context_to_nv12 = hb_sws_get_context(
                                         job->width, job->height,
-                                        AV_PIX_FMT_YUV420P,
+                                        job->pix_fmt,
                                         job->width, job->height,
                                         AV_PIX_FMT_P010LE,
                                         SWS_LANCZOS|SWS_ACCURATE_RND,
@@ -860,7 +860,7 @@ int qsv_enc_init(hb_work_private_t *pv)
         {
             pv->sws_context_to_nv12 = hb_sws_get_context(
                                         job->width, job->height,
-                                        AV_PIX_FMT_YUV420P,
+                                        job->pix_fmt,
                                         job->width, job->height,
                                         AV_PIX_FMT_NV12,
                                         SWS_LANCZOS|SWS_ACCURATE_RND,

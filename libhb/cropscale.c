@@ -63,9 +63,7 @@ static int crop_scale_init(hb_filter_object_t * filter, hb_filter_init_t * init)
 
     hb_dict_t        * settings = filter->settings;
     hb_value_array_t * avfilters = hb_value_array_init();
-    int                width, height;
-    int                top = 0, bottom = 0, left = 0, right = 0;
-    const char       * matrix;
+    int                width, height, top, bottom, left, right;
 
     // Convert crop settings to 'crop' avfilter
     hb_dict_extract_int(&top, settings, "crop-top");
@@ -144,67 +142,10 @@ static int crop_scale_init(hb_filter_object_t * filter, hb_filter_init_t * init)
         hb_dict_set_int(avsettings, "width", width);
         hb_dict_set_int(avsettings, "height", height);
         hb_dict_set_string(avsettings, "flags", "lanczos+accurate_rnd");
-
-        switch (init->color_matrix)
-        {
-            case HB_COLR_MAT_BT709:
-                matrix = "bt709";
-                break;
-            case HB_COLR_MAT_FCC:
-                matrix = "fcc";
-                break;
-            case HB_COLR_MAT_SMPTE240M:
-                matrix = "smpte240m";
-                break;
-            case HB_COLR_MAT_BT470BG:
-            case HB_COLR_MAT_SMPTE170M:
-                matrix = "smpte170m";
-                break;
-            case HB_COLR_MAT_BT2020_NCL:
-            case HB_COLR_MAT_BT2020_CL:
-                matrix = "bt2020";
-                break;
-            default:
-            case HB_COLR_MAT_UNDEF:
-                matrix = NULL;
-                break;
-        }
-        if (matrix != NULL)
-        {
-            hb_dict_set_string(avsettings, "in_color_matrix", matrix);
-            hb_dict_set_string(avsettings, "out_color_matrix", matrix);
-        }
-        hb_dict_set_string(avsettings, "out_range", "limited");
         hb_dict_set(avfilter, "scale", avsettings);
     }
-    
+
     hb_value_array_append(avfilters, avfilter);
-
-    avfilter   = hb_dict_init();
-    avsettings = hb_dict_init();
-
-#if HB_PROJECT_FEATURE_QSV && (defined( _WIN32 ) || defined( __MINGW32__ ))
-    if (!hb_qsv_hw_filters_are_enabled(init->job))
-#endif
-    {
-        char * out_pix_fmt = NULL;
-
-        // "out_pix_fmt" is a private option used internally by
-        // handbrake for preview generation
-        hb_dict_extract_string(&out_pix_fmt, settings, "out_pix_fmt");
-        if (out_pix_fmt != NULL)
-        {
-            hb_dict_set_string(avsettings, "pix_fmts", out_pix_fmt);
-            free(out_pix_fmt);
-        }
-        else
-        {
-            hb_dict_set_string(avsettings, "pix_fmts",
-                av_get_pix_fmt_name(init->pix_fmt));
-        }
-        hb_dict_set(avfilter, "format", avsettings);
-        hb_value_array_append(avfilters, avfilter);
-    }
 
     init->crop[0] = top;
     init->crop[1] = bottom;
