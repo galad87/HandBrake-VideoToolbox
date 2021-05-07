@@ -1691,12 +1691,12 @@ static const enum AVPixelFormat standard_12bit_pix_fmts[] =
     AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
 };
 
-const int* hb_video_encoder_get_pix_fmts(int encoder)
+const int* hb_video_encoder_get_pix_fmts(hb_job_t * job, int encoder)
 {
 #if HB_PROJECT_FEATURE_QSV
     if (encoder & HB_VCODEC_QSV_MASK)
     {
-        return hb_qsv_get_pix_fmts(encoder);
+        return hb_qsv_get_pix_fmts(job, encoder);
     }
 #endif
 
@@ -6012,46 +6012,4 @@ static int pix_fmt_is_supported(hb_job_t * job, int pix_fmt)
     }
 
     return 1;
-}
-
-int hb_get_best_pix_fmt(hb_job_t * job)
-{
-    int bit_depth = hb_get_bit_depth(job->title->pix_fmt);
-#if HB_PROJECT_FEATURE_QSV && (defined( _WIN32 ) || defined( __MINGW32__ ))
-    if (hb_qsv_encoder_info_get(hb_qsv_get_adapter_index(), job->vcodec))
-    {
-        if (hb_qsv_full_path_is_enabled(job))
-        {
-            if (job->title->pix_fmt == AV_PIX_FMT_YUV420P10 && job->vcodec == HB_VCODEC_QSV_H265_10BIT)
-            {
-                return AV_PIX_FMT_P010LE;
-            }
-            else
-            {
-                return AV_PIX_FMT_NV12;
-            }
-        }
-        else
-        {
-            // system memory usage: QSV encoder only or QSV decoder + SW filters + QSV encoder
-            return AV_PIX_FMT_YUV420P;
-        }
-    }
-#endif
-    if (job->vcodec == HB_VCODEC_FFMPEG_MF_H264 || job->vcodec == HB_VCODEC_FFMPEG_MF_H265)
-    {
-        if (pix_fmt_is_supported(job, AV_PIX_FMT_NV12))
-        {
-            return AV_PIX_FMT_NV12;
-        }
-    }
-    if (bit_depth >= 12 && bit_depth_is_supported(job, 12))
-    {
-        return AV_PIX_FMT_YUV420P12;
-    }
-    if (bit_depth >= 10 && bit_depth_is_supported(job, 10))
-    {
-        return AV_PIX_FMT_YUV420P10;
-    }
-    return AV_PIX_FMT_YUV420P;
 }

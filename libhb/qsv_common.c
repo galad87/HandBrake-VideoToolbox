@@ -158,14 +158,26 @@ static hb_triplet_t hb_qsv_h265_levels[] =
     { NULL,                            },
 };
 
+#if defined(_WIN32) || defined(__MINGW32__)
+static const enum AVPixelFormat hb_qsv_hw_pix_fmts[] =
+{
+    AV_PIX_FMT_NV12, AV_PIX_FMT_NONE
+};
+
+static const enum AVPixelFormat hb_qsv_hw_10bit_pix_fmts[] =
+{
+    AV_PIX_FMT_P010LE, AV_PIX_FMT_NONE
+};
+#endif
+
 static const enum AVPixelFormat hb_qsv_pix_fmts[] =
 {
-    AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
+    AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
 };
 
 static const enum AVPixelFormat hb_qsv_10bit_pix_fmts[] =
 {
-    AV_PIX_FMT_P010LE, AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
+    AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
 };
 
 #define MFX_IMPL_VIA_MASK(impl) (0x0f00 & (impl))
@@ -1296,8 +1308,7 @@ int hb_qsv_decode_codec_supported_codec(int adapter_index, int video_codec_param
         case AV_CODEC_ID_H264:
             if (pix_fmt == AV_PIX_FMT_NV12     ||
                 pix_fmt == AV_PIX_FMT_YUV420P  ||
-                pix_fmt == AV_PIX_FMT_YUVJ420P ||
-                pix_fmt == AV_PIX_FMT_YUV420P10)
+                pix_fmt == AV_PIX_FMT_YUVJ420P)
             {
                 return hb_qsv_decode_h264_is_supported(adapter_index);
             }
@@ -1375,7 +1386,6 @@ int hb_qsv_full_path_is_enabled(hb_job_t *job)
 {
     static int device_check_completed = 0;
     static int device_check_succeded = 0;
-    int codecs_exceptions = 0;
     int qsv_full_path_is_enabled = 0;
     hb_qsv_info_t *info = hb_qsv_encoder_info_get(hb_qsv_get_adapter_index(), job->vcodec);
 
@@ -1385,11 +1395,31 @@ int hb_qsv_full_path_is_enabled(hb_job_t *job)
        device_check_completed = 1;
     }
 
-    codecs_exceptions = (job->title->pix_fmt == AV_PIX_FMT_YUV420P10 && job->vcodec == HB_VCODEC_QSV_H264);
+    int title_bit_depth = hb_get_bit_depth(job->title->pix_fmt);
+    int pix_fmt_bit_depth = 0;
+
+    switch (job->vcodec)
+    {
+        case HB_VCODEC_QSV_H264:
+        case HB_VCODEC_QSV_H265_8BIT:
+            pix_fmt_bit_depth = 8;
+            break;
+        case HB_VCODEC_QSV_H265_10BIT:
+            pix_fmt_bit_depth = 10;
+            break;
+        default:
+            return 0;
+    }
+
+    if (pix_fmt_bit_depth != title_bit_depth)
+    {
+        return 0;
+    }
 
     qsv_full_path_is_enabled = (hb_qsv_decode_is_enabled(job) &&
         info && hb_qsv_implementation_is_hardware(info->implementation) &&
-        device_check_succeded && job->qsv.ctx && !job->qsv.ctx->num_cpu_filters) && !codecs_exceptions;
+        device_check_succeded && job->qsv.ctx && !job->qsv.ctx->num_cpu_filters);
+
     return qsv_full_path_is_enabled;
 }
 
@@ -2193,16 +2223,29 @@ const char* const* hb_qsv_level_get_names(int encoder)
     }
 }
 
-const int* hb_qsv_get_pix_fmts(int encoder)
+const int* hb_qsv_get_pix_fmts(hb_job_t *job, int encoder)
 {
     switch (encoder)
     {
         case HB_VCODEC_QSV_H264:
         case HB_VCODEC_QSV_H265:
-            return hb_qsv_pix_fmts;
+#if HB_PROJECT_FEATURE_QSV && (defined( _WIN32 ) || defined( __MINGW32__ ))
+            if (hb_qsv_full_path_is_enabled(job))
+            {
+                return hb_qsv_hw_pix_fmts;
+            }
+            else
+#endif
+                return hb_qsv_pix_fmts;
         case HB_VCODEC_QSV_H265_10BIT:
-            return hb_qsv_10bit_pix_fmts;
-
+#if HB_PROJECT_FEATURE_QSV && (defined( _WIN32 ) || defined( __MINGW32__ ))
+            if (hb_qsv_full_path_is_enabled(job))
+            {
+                return hb_qsv_hw_10bit_pix_fmts;
+            }
+            else
+#endif
+                return hb_qsv_10bit_pix_fmts;
          default:
              return hb_qsv_pix_fmts;
      }
